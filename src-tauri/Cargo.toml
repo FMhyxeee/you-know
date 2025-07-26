@@ -35,4 +35,10 @@ base64 = "0.21"
 dirs = "5.0"
 async-trait = "0.1"
 tokio-stream = "0.1"
+# RSS解析相关依赖
+rss = "2.0"
+feed-rs = "1.3"
+url = "2.4"
+log = "0.4.27"
+tauri-plugin-log = "2"
 
