@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use tauri::Manager;
-use sqlx::{SqlitePool, Row};
+use sqlx::{migrate::MigrateDatabase, Row, SqlitePool};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
@@ -153,20 +153,6 @@ async fn test_crud_operations(state: tauri::State<'_, AppState>) -> Result<Strin
     Ok(format!("CRUD operations successful. Found {} conversations", count))
 }
 
-// 技术验证：Rig库基本功能测试
-#[tauri::command]
-async fn test_rig_library() -> Result<String, String> {
-    // 注意：这里只是演示Rig库的基本使用，实际需要有效的API密钥
-    // 在生产环境中，这个功能需要真实的API密钥
-    
-    // 模拟Rig库的基本功能测试
-    let test_message = "Hello, this is a test message for Rig library";
-    
-    // 这里应该是真实的Rig库调用，但由于需要API密钥，我们先模拟
-    let response = format!("Rig library test completed. Input: {}", test_message);
-    
-    Ok(response)
-}
 
 // 初始化数据库
 async fn init_database() -> Result<SqlitePool, Box<dyn std::error::Error>> {
@@ -178,8 +164,11 @@ async fn init_database() -> Result<SqlitePool, Box<dyn std::error::Error>> {
     // 确保目录存在
     std::fs::create_dir_all(&app_data_dir)?;
     
-    // 数据库文件路径
+    // 数据库文件路径, 如果没有就创建
     let db_path = app_data_dir.join("app.db");
+    if !db_path.exists() {
+        sqlx::Sqlite::create_database(db_path.as_path().to_str().unwrap()).await.unwrap();
+    }
     let database_url = format!("sqlite:{}", db_path.display());
     
     // 创建连接池
@@ -196,8 +185,7 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             // 初始化数据库
-            let runtime = tokio::runtime::Runtime::new().unwrap();
-            let db = runtime.block_on(async {
+            let db = tauri::async_runtime::block_on(async {
                 init_database().await.expect("Failed to initialize database")
             });
             
@@ -210,9 +198,22 @@ pub fn run() {
             test_database_connection,
             create_tables,
             test_crud_operations,
-            test_rig_library,
             greet
         ])
+        .on_window_event(|window, f| {
+            match f {
+                tauri::WindowEvent::CloseRequested { ..} => {
+
+                    #[cfg(debug_assertions)]
+                    // clear db file , only when develop mode
+                    let db_path = window.app_handle().path().app_data_dir().unwrap().join("app.db");
+                    if db_path.exists() {
+                        std::fs::remove_file(db_path).expect("Failed to remove db file");
+                    }
+                }
+                _ => {}
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
