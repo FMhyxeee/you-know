@@ -149,6 +149,15 @@ pub async fn get_articles(
     RssService::get_articles(&state.db, feed_id, limit, offset).await
 }
 
+/// 获取单篇文章详细内容
+#[tauri::command]
+pub async fn get_article_content(
+    state: State<'_, AppState>,
+    article_id: String,
+) -> AppResult<RssArticle> {
+    RssService::get_article_content(&state.db, article_id).await
+}
+
 /// 更新文章状态
 #[tauri::command]
 pub async fn update_article(
@@ -168,6 +177,12 @@ pub async fn refresh_rss_feed(state: State<'_, AppState>, feed_id: String) -> Ap
 #[tauri::command]
 pub async fn delete_rss_feed(state: State<'_, AppState>, feed_id: String) -> AppResult<String> {
     RssService::delete_feed(&state.db, feed_id).await
+}
+
+/// 获取统计信息
+#[tauri::command]
+pub async fn get_statistics(state: State<'_, AppState>) -> AppResult<serde_json::Value> {
+    RssService::get_statistics(&state.db).await
 }
 
 /// 保留原有的greet函数用于基本测试

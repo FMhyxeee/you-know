@@ -45,9 +45,12 @@ pub fn run() {
             commands::add_rss_feed,
             commands::get_rss_feeds,
             commands::get_articles,
+            commands::get_article_content,
             commands::update_article,
             commands::refresh_rss_feed,
-            commands::delete_rss_feed
+            commands::delete_rss_feed,
+            commands::get_statistics,
+            commands::greet
         ])
         .on_window_event(|_window, f| {
             match f {

@@ -5,7 +5,7 @@
   "identifier": "com.you-know.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:23333",
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"
   },
