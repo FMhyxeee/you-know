@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests {
     use crate::rss::RssService;
-    use chrono::Utc;
     use sqlx::SqlitePool;
     use tempfile::NamedTempFile;
 
@@ -66,7 +65,7 @@ mod tests {
         // 创建一个没有内容的测试文章
         let article_id = "test-article-id";
         sqlx::query(
-            "INSERT INTO rss_articles (id, feed_id, title, link, description, content, author, published_at, guid, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO rss_articles (id, feed_id, title, link, description, content, author, published_at, guid, read_time, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(article_id)
         .bind(feed_id)
@@ -77,6 +76,7 @@ mod tests {
         .bind("Test Author")
         .bind(chrono::Utc::now().to_rfc3339())
         .bind("test-guid")
+        .bind(Some("5 min read")) // 测试readTime
         .bind(chrono::Utc::now().to_rfc3339())
         .execute(&db)
         .await

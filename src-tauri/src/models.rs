@@ -52,6 +52,7 @@ pub struct RssArticle {
     pub guid: Option<String>,
     pub is_read: bool,
     pub is_starred: bool,
+    pub read_time: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 

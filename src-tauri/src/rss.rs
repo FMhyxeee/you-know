@@ -2,6 +2,7 @@ use crate::error::{AppError, AppResult};
 use crate::models::{AddFeedRequest, RssArticle, RssFeed, UpdateArticleRequest};
 use chrono::{DateTime, Utc};
 use feed_rs::parser;
+use log::info;
 use readability::extractor;
 use reqwest;
 use scraper::{Html, Selector};
@@ -115,14 +116,14 @@ impl RssService {
 
         let query = if let Some(feed_id) = feed_id {
             sqlx::query(
-                "SELECT id, feed_id, title, link, description, content, author, published_at, guid, is_read, is_starred, created_at FROM rss_articles WHERE feed_id = ? ORDER BY published_at DESC, created_at DESC LIMIT ? OFFSET ?"
+                "SELECT id, feed_id, title, link, description, content, author, published_at, guid, is_read, is_starred, read_time, created_at FROM rss_articles WHERE feed_id = ? ORDER BY published_at DESC, created_at DESC LIMIT ? OFFSET ?"
             )
             .bind(feed_id)
             .bind(limit)
             .bind(offset)
         } else {
             sqlx::query(
-                "SELECT id, feed_id, title, link, description, content, author, published_at, guid, is_read, is_starred, created_at FROM rss_articles ORDER BY published_at DESC, created_at DESC LIMIT ? OFFSET ?"
+                "SELECT id, feed_id, title, link, description, content, author, published_at, guid, is_read, is_starred, read_time, created_at FROM rss_articles ORDER BY published_at DESC, created_at DESC LIMIT ? OFFSET ?"
             )
             .bind(limit)
             .bind(offset)
@@ -151,6 +152,7 @@ impl RssService {
                 guid: row.get("guid"),
                 is_read: row.get("is_read"),
                 is_starred: row.get("is_starred"),
+                read_time: row.get("read_time"),
                 created_at: DateTime::parse_from_rfc3339(&created_at_str)
                     .unwrap()
                     .with_timezone(&Utc),
@@ -335,7 +337,7 @@ impl RssService {
     /// 获取单篇文章详细内容
     pub async fn get_article_content(db: &SqlitePool, article_id: String) -> AppResult<RssArticle> {
         let row = sqlx::query(
-            "SELECT id, feed_id, title, link, description, content, author, published_at, guid, is_read, is_starred, created_at FROM rss_articles WHERE id = ?"
+            "SELECT id, feed_id, title, link, description, content, author, published_at, guid, is_read, is_starred, read_time, created_at FROM rss_articles WHERE id = ?"
         )
         .bind(&article_id)
         .fetch_one(db)
@@ -348,6 +350,8 @@ impl RssService {
         // 如果content为空，尝试从原始链接获取完整内容
         let mut content: Option<String> = row.get("content");
         let link: Option<String> = row.get("link");
+
+        info!("link is {:?}", link);
 
         // 如果content为空且有链接，尝试获取完整内容
         if (content.is_none() || content.as_ref().map_or(true, |c| c.trim().is_empty()))
@@ -383,6 +387,7 @@ impl RssService {
             guid: row.get("guid"),
             is_read: row.get("is_read"),
             is_starred: row.get("is_starred"),
+            read_time: row.get("read_time"),
             created_at: DateTime::parse_from_rfc3339(&created_at_str)
                 .unwrap()
                 .with_timezone(&Utc),
@@ -499,8 +504,11 @@ impl RssService {
                 }
             }
 
+            // 尝试从RSS entry中提取readTime信息
+            let read_time = Self::extract_read_time(&entry);
+
             let result = sqlx::query(
-                "INSERT OR IGNORE INTO rss_articles (id, feed_id, title, link, description, content, author, published_at, guid, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT OR IGNORE INTO rss_articles (id, feed_id, title, link, description, content, author, published_at, guid, read_time, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
             .bind(&article_id)
             .bind(feed_id)
@@ -511,6 +519,7 @@ impl RssService {
             .bind(&author)
             .bind(&published_at)
             .bind(&guid)
+            .bind(&read_time)
             .bind(now.to_rfc3339())
             .execute(db)
             .await?;
@@ -521,5 +530,47 @@ impl RssService {
         }
 
         Ok(new_articles)
+    }
+
+    /// 从RSS entry中提取readTime信息
+    fn extract_read_time(entry: &feed_rs::model::Entry) -> Option<String> {
+        // 尝试从title或summary中查找阅读时间信息
+        if let Some(title) = &entry.title {
+            // 使用简单的字符串匹配而不是regex
+            if title.content.contains("min read") {
+                // 尝试提取数字
+                let words: Vec<&str> = title.content.split_whitespace().collect();
+                for (i, word) in words.iter().enumerate() {
+                    if word == &"min" && i > 0 {
+                        if let Ok(minutes) = words[i-1].parse::<i32>() {
+                            return Some(format!("{} min read", minutes));
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 如果没有找到readTime，尝试从内容长度估算
+        if let Some(content) = &entry.content {
+            if let Some(body) = &content.body {
+                let word_count = body.split_whitespace().count();
+                if word_count > 0 {
+                    // 假设平均阅读速度为200词/分钟
+                    let read_minutes = (word_count as f64 / 200.0).ceil() as i32;
+                    return Some(format!("{} min read", read_minutes.max(1)));
+                }
+            }
+        }
+        
+        // 如果内容为空，尝试从摘要估算
+        if let Some(summary) = &entry.summary {
+            let word_count = summary.content.split_whitespace().count();
+            if word_count > 0 {
+                let read_minutes = (word_count as f64 / 200.0).ceil() as i32;
+                return Some(format!("{} min read", read_minutes.max(1)));
+            }
+        }
+        
+        None
     }
 }

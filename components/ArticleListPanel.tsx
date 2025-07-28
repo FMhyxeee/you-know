@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { ScrollArea } from './ui/scroll-area';
-import { Badge } from './ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Search, Star, Clock, ExternalLink } from 'lucide-react';
+import React, { useState } from "react";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { ScrollArea } from "./ui/scroll-area";
+import { Badge } from "./ui/badge";
+import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
+import { Search, Star, Clock } from "lucide-react";
 
 interface Article {
   id: string;
@@ -19,67 +19,95 @@ interface Article {
   feed_id: string;
   feedName?: string;
   readTime?: string;
+  created_at: string;
+  content?: string;
+  author?: string;
+  guid?: string;
+  read_time?: string;
+  summary?: string;
+  image?: string;
+}
+
+interface Feed {
+  id: string;
+  title: string;
+  url: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 interface ArticleListPanelProps {
   articles: Article[];
-  feeds: any[];
+  feeds: Feed[];
   selectedFeed: string | null;
   selectedArticle: Article | null;
   loading: boolean;
   error: string | null;
   onArticleSelect: (article: Article) => void;
+  isCollapsed?: boolean;
 }
 
 export default function ArticleListPanel({
   articles,
-  feeds,
-  selectedFeed,
   selectedArticle,
   loading,
-  error,
-  onArticleSelect
+  onArticleSelect,
+  isCollapsed = false,
 }: ArticleListPanelProps) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filter, setFilter] = useState<'all' | 'unread' | 'starred'>('all');
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filter, setFilter] = useState<"all" | "unread" | "starred">("all");
 
-  const filteredArticles = articles.filter(article => {
-    const matchesSearch = article.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         article.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (article.feedName && article.feedName.toLowerCase().includes(searchTerm.toLowerCase()));
-    
-    const matchesFilter = 
-      filter === 'all' ||
-      (filter === 'unread' && !article.is_read) ||
-      (filter === 'starred' && article.is_starred);
-    
+  const filteredArticles = articles.filter((article) => {
+    const matchesSearch =
+      article.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      article.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (article.feedName &&
+        article.feedName.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    const matchesFilter =
+      filter === "all" ||
+      (filter === "unread" && !article.is_read) ||
+      (filter === "starred" && article.is_starred);
+
     return matchesSearch && matchesFilter;
   });
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
-    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
-    
+    const diffInHours = Math.floor(
+      (now.getTime() - date.getTime()) / (1000 * 60 * 60),
+    );
+
     if (diffInHours < 1) {
-      return '刚刚';
+      return "刚刚";
     } else if (diffInHours < 24) {
       return `${diffInHours}小时前`;
     } else if (diffInHours < 48) {
-      return '昨天';
+      return "昨天";
     } else {
-      return date.toLocaleDateString('zh-CN', {
-        month: 'short',
-        day: 'numeric'
+      return date.toLocaleDateString("zh-CN", {
+        month: "short",
+        day: "numeric",
       });
     }
   };
 
-
+  // 如果是折叠状态，显示简化的边框样式
+  if (isCollapsed) {
+    return (
+      <div className="h-full bg-muted/30 flex flex-col items-center justify-center">
+        <div className="writing-mode-vertical text-sm text-muted-foreground transform rotate-180">
+          文章
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
-      <div className="w-96 border-r bg-background flex items-center justify-center">
+      <div className="h-full border-r bg-background flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
           <p className="text-sm text-muted-foreground">加载中...</p>
@@ -89,16 +117,14 @@ export default function ArticleListPanel({
   }
 
   return (
-    <div className="w-96 border-r bg-background flex flex-col">
+    <div className="h-full border-r bg-background flex flex-col">
       {/* Header */}
       <div className="p-4 border-b">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold">文章列表</h2>
-          <Badge variant="outline">
-            {filteredArticles.length}
-          </Badge>
+          <Badge variant="outline">{filteredArticles.length}</Badge>
         </div>
-        
+
         {/* Search */}
         <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -111,7 +137,12 @@ export default function ArticleListPanel({
         </div>
 
         {/* Filter Tabs */}
-        <Tabs value={filter} onValueChange={(value) => setFilter(value as any)}>
+        <Tabs
+          value={filter}
+          onValueChange={(value) =>
+            setFilter(value as "all" | "unread" | "starred")
+          }
+        >
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="all">全部</TabsTrigger>
             <TabsTrigger value="unread">未读</TabsTrigger>
@@ -133,18 +164,20 @@ export default function ArticleListPanel({
                 key={article.id}
                 className={`p-4 rounded-lg cursor-pointer transition-colors mb-2 border ${
                   selectedArticle?.id === article.id
-                    ? 'bg-primary/10 border-primary'
-                    : 'hover:bg-muted border-transparent'
+                    ? "bg-primary/10 border-primary"
+                    : "hover:bg-muted border-transparent"
                 } ${
-                  !article.is_read ? 'bg-blue-50/50 dark:bg-blue-950/20' : ''
+                  !article.is_read ? "bg-blue-50/50 dark:bg-blue-950/20" : ""
                 }`}
                 onClick={() => onArticleSelect(article)}
               >
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex-1 min-w-0">
-                    <h3 className={`font-medium line-clamp-2 ${
-                      !article.is_read ? 'font-semibold' : ''
-                    }`}>
+                    <h3
+                      className={`font-medium line-clamp-2 ${
+                        !article.is_read ? "font-semibold" : ""
+                      }`}
+                    >
                       {article.title}
                     </h3>
                   </div>
@@ -160,8 +193,8 @@ export default function ArticleListPanel({
                     <Star
                       className={`h-4 w-4 ${
                         article.is_starred
-                          ? 'fill-yellow-400 text-yellow-400'
-                          : 'text-muted-foreground'
+                          ? "fill-yellow-400 text-yellow-400"
+                          : "text-muted-foreground"
                       }`}
                     />
                   </Button>
@@ -175,11 +208,17 @@ export default function ArticleListPanel({
 
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <div className="flex items-center gap-2">
-                    <span className="font-medium">{article.feedName || '未知来源'}</span>
+                    <span className="font-medium">
+                      {article.feedName || "未知来源"}
+                    </span>
                     <span>•</span>
                     <div className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
-                      <span>{article.published_at ? formatDate(article.published_at) : '未知时间'}</span>
+                      <span>
+                        {article.published_at
+                          ? formatDate(article.published_at)
+                          : "未知时间"}
+                      </span>
                     </div>
                     {article.readTime && (
                       <>
@@ -188,7 +227,7 @@ export default function ArticleListPanel({
                       </>
                     )}
                   </div>
-                  
+
                   {!article.is_read && (
                     <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                   )}

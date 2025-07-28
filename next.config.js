@@ -1,15 +1,15 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',
-  distDir: 'dist',
+  output: "export",
+  distDir: "dist",
   trailingSlash: true,
   images: {
-    unoptimized: true
+    unoptimized: true,
   },
-  assetPrefix: process.env.NODE_ENV === 'production' ? './' : '',
+  assetPrefix: process.env.NODE_ENV === "production" ? "./" : "",
   experimental: {
-    esmExternals: false
-  }
-}
+    esmExternals: false,
+  },
+};
 
-module.exports = nextConfig
+module.exports = nextConfig;

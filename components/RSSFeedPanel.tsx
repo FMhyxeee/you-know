@@ -1,13 +1,19 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
-import { Label } from './ui/label';
-import { ScrollArea } from './ui/scroll-area';
-import { Badge } from './ui/badge';
-import { Plus, Search, RefreshCw, Trash2 } from 'lucide-react';
+import React, { useState } from "react";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "./ui/dialog";
+import { Label } from "./ui/label";
+import { ScrollArea } from "./ui/scroll-area";
+import { Badge } from "./ui/badge";
+import { Plus, Search, RefreshCw, Trash2 } from "lucide-react";
 
 interface Feed {
   id: string;
@@ -17,9 +23,20 @@ interface Feed {
   unread_count: number;
 }
 
+interface Article {
+  id: string;
+  feed_id: string;
+  is_read: boolean;
+  title: string;
+  description?: string;
+  link?: string;
+  published_at?: string;
+  created_at: string;
+}
+
 interface RSSFeedPanelProps {
-  feeds: any[];
-  articles: any[];
+  feeds: Feed[];
+  articles: Article[];
   selectedFeed: string | null;
   searchQuery: string;
   loading: boolean;
@@ -30,6 +47,7 @@ interface RSSFeedPanelProps {
   onRefreshData: () => void;
   onRefreshFeed: (feedId: string) => void;
   onDeleteFeed: (feedId: string, feedTitle: string) => void;
+  isCollapsed?: boolean;
 }
 
 export default function RSSFeedPanel({
@@ -38,44 +56,58 @@ export default function RSSFeedPanel({
   selectedFeed,
   searchQuery,
   loading,
-  error,
   onFeedSelect,
   onSearchChange,
   onAddFeed,
-  onRefreshData,
   onRefreshFeed,
-  onDeleteFeed
+  onDeleteFeed,
+  isCollapsed = false,
 }: RSSFeedPanelProps) {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [newFeedUrl, setNewFeedUrl] = useState('');
-  const [statistics, setStatistics] = useState<any>(null);
+  const [newFeedUrl, setNewFeedUrl] = useState("");
 
   // 计算每个feed的未读数量
-  const feedsWithUnreadCount = feeds.map(feed => ({
+  const feedsWithUnreadCount = feeds.map((feed) => ({
     ...feed,
-    unread_count: articles.filter(article => article.feed_id === feed.id && !article.is_read).length
+    unread_count: articles.filter(
+      (article) => article.feed_id === feed.id && !article.is_read,
+    ).length,
   }));
 
-  const filteredFeeds = feedsWithUnreadCount.filter(feed =>
-    feed.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    feed.url.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredFeeds = feedsWithUnreadCount.filter(
+    (feed) =>
+      feed.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      feed.url.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   const handleAddFeed = async () => {
     if (newFeedUrl.trim()) {
       const success = await onAddFeed(newFeedUrl.trim());
       if (success) {
-        setNewFeedUrl('');
+        setNewFeedUrl("");
         setIsAddDialogOpen(false);
       }
     }
   };
 
   // 计算总的未读数量
-  const totalUnreadCount = articles.filter(article => !article.is_read).length;
+  const totalUnreadCount = articles.filter(
+    (article) => !article.is_read,
+  ).length;
+
+  // 如果是折叠状态，显示简化的边框样式
+  if (isCollapsed) {
+    return (
+      <div className="h-full bg-muted/30 flex flex-col items-center justify-center">
+        <div className="writing-mode-vertical text-sm text-muted-foreground transform rotate-180">
+          RSS
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="w-80 border-r bg-muted/50 flex flex-col">
+    <div className="h-full border-r bg-muted/50 flex flex-col">
       {/* Header */}
       <div className="p-4 border-b">
         <div className="flex items-center justify-between mb-3">
@@ -107,7 +139,7 @@ export default function RSSFeedPanel({
             </DialogContent>
           </Dialog>
         </div>
-        
+
         {/* Search */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -127,16 +159,14 @@ export default function RSSFeedPanel({
           <div
             className={`p-3 rounded-lg cursor-pointer transition-colors mb-2 ${
               selectedFeed === null
-                ? 'bg-primary text-primary-foreground'
-                : 'hover:bg-muted'
+                ? "bg-primary text-primary-foreground"
+                : "hover:bg-muted"
             }`}
             onClick={() => onFeedSelect(null)}
           >
             <div className="flex items-center justify-between">
               <span className="font-medium">所有文章</span>
-              <Badge variant="secondary">
-                {totalUnreadCount}
-              </Badge>
+              <Badge variant="secondary">{totalUnreadCount}</Badge>
             </div>
           </div>
 
@@ -146,8 +176,8 @@ export default function RSSFeedPanel({
               key={feed.id}
               className={`p-3 rounded-lg cursor-pointer transition-colors mb-2 group ${
                 selectedFeed === feed.id
-                  ? 'bg-primary text-primary-foreground'
-                  : 'hover:bg-muted'
+                  ? "bg-primary text-primary-foreground"
+                  : "hover:bg-muted"
               }`}
               onClick={() => onFeedSelect(feed.id)}
             >
@@ -168,7 +198,7 @@ export default function RSSFeedPanel({
                   )}
                 </div>
               </div>
-              
+
               {/* Action Buttons */}
               <div className="flex items-center gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 <Button
@@ -180,7 +210,9 @@ export default function RSSFeedPanel({
                   }}
                   disabled={loading}
                 >
-                  <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
+                  <RefreshCw
+                    className={`h-3 w-3 ${loading ? "animate-spin" : ""}`}
+                  />
                 </Button>
                 <Button
                   size="sm"
