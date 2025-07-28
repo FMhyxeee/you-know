@@ -216,7 +216,12 @@ export default function HomePage() {
         } border-r border-gray-200 dark:border-gray-700`}
       >
         <RSSFeedPanel
-          feeds={feeds}
+          feeds={feeds.map(feed => ({
+            ...feed,
+            unread_count: articles.filter(article => 
+              article.feed_id === feed.id && !article.is_read
+            ).length
+          }))}
           articles={articles}
           selectedFeed={selectedFeed}
           searchQuery={searchQuery}
