@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS rss_articles (
     guid TEXT,
     is_read BOOLEAN DEFAULT FALSE,
     is_starred BOOLEAN DEFAULT FALSE,
+    read_time TEXT, 
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (feed_id) REFERENCES rss_feeds(id) ON DELETE CASCADE
 );
