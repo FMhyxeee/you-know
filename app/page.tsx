@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import RSSFeedPanel from "@/components/RSSFeedPanel";
 import ArticleListPanel from "@/components/ArticleListPanel";
 import ArticleReaderPanel from "@/components/ArticleReaderPanel";
-import { ApiService, RssFeed, RssArticle } from "@/services/api";
+import { ApiService, RssFeed, RssArticle, RssFetchProgress, RssArticleFetched } from "@/services/api";
 
 // 定义Tauri窗口接口
 interface TauriWindow extends Window {
@@ -27,6 +27,7 @@ export default function HomePage() {
   const [articles, setArticles] = useState<ExtendedArticle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [fetchProgress, setFetchProgress] = useState<Map<string, RssFetchProgress>>(new Map());
 
   // 添加Esc键退出阅读模式的功能
   useEffect(() => {
@@ -49,8 +50,8 @@ export default function HomePage() {
       setError(null);
       // Check if we're in Tauri environment
       if (typeof window !== "undefined" && (window as TauriWindow).__TAURI__) {
-        // Initialize database tables first
-        await ApiService.createTables();
+        // 数据库表在应用启动时已通过迁移自动创建，无需重复调用
+        // await ApiService.createTables(); // 移除重复的表创建调用
         const feedsData = await ApiService.getRssFeeds();
         const articlesData = await ApiService.getArticles();
         setFeeds(feedsData);
@@ -87,32 +88,80 @@ export default function HomePage() {
     }
   };
 
+  // 初始化数据加载（只执行一次）
   useEffect(() => {
     loadData();
   }, []);
 
-  // Add RSS feed function
+  // 设置事件监听（依赖于 feeds 变化，但不重新加载数据）
+  useEffect(() => {
+    if (typeof window !== "undefined" && (window as TauriWindow).__TAURI__) {
+      let progressUnlisten: (() => void) | null = null;
+      let articleUnlisten: (() => void) | null = null;
+      
+      // 监听RSS抓取进度
+      ApiService.listenToRssFetchProgress((progress) => {
+        setFetchProgress(prev => {
+          const newMap = new Map(prev);
+          newMap.set(progress.feed_id, progress);
+          return newMap;
+        });
+        
+        // 如果抓取完成，清除进度信息
+        if (progress.status === 'Completed' || (typeof progress.status === 'object' && 'Failed' in progress.status)) {
+          setTimeout(() => {
+            setFetchProgress(prev => {
+              const newMap = new Map(prev);
+              newMap.delete(progress.feed_id);
+              return newMap;
+            });
+          }, 3000); // 3秒后清除进度信息
+        }
+      }).then(unlisten => {
+        progressUnlisten = unlisten;
+      });
+      
+      // 监听文章抓取事件
+      ApiService.listenToRssArticleFetched((articleEvent) => {
+        const newArticle: ExtendedArticle = {
+          ...articleEvent.article,
+          feedName: feeds.find(f => f.id === articleEvent.feed_id)?.title || "Unknown Feed",
+          readTime: articleEvent.article.read_time || undefined,
+          summary: articleEvent.article.description || 
+                  articleEvent.article.content?.substring(0, 200) + "..." || 
+                  "No summary available",
+        };
+        
+        setArticles(prev => {
+          // 检查文章是否已存在，避免重复添加
+          const exists = prev.some(article => article.id === newArticle.id);
+          if (!exists) {
+            return [newArticle, ...prev]; // 新文章添加到顶部
+          }
+          return prev;
+        });
+      }).then(unlisten => {
+        articleUnlisten = unlisten;
+      });
+      
+      // 清理函数
+      return () => {
+        if (progressUnlisten) progressUnlisten();
+        if (articleUnlisten) articleUnlisten();
+      };
+    }
+  }, [feeds]);
+
+  // Add RSS feed function (异步版本)
   const handleAddFeed = async (url: string) => {
     try {
       setError(null);
       if (typeof window !== "undefined" && (window as TauriWindow).__TAURI__) {
-        const newFeed = await ApiService.addRssFeed({ url });
+        // 使用异步版本，立即返回RSS源信息，后台抓取文章
+        const newFeed = await ApiService.addRssFeedAsync({ url });
         setFeeds((prev) => [...prev, newFeed]);
-        // Refresh articles after adding feed
-        const articlesData = await ApiService.getArticles();
-        setArticles(
-          articlesData.map((article) => ({
-            ...article,
-            feedName:
-              [...feeds, newFeed].find((f) => f.id === article.feed_id)
-                ?.title || "Unknown Feed",
-            readTime: article.read_time || undefined,
-            summary:
-              article.description ||
-              article.content?.substring(0, 200) + "..." ||
-              "No summary available",
-          })),
-        );
+        
+        // 不需要立即刷新文章，因为文章会通过事件逐个添加
         return true;
       } else {
         console.log("Cannot add feed in browser mode");
@@ -227,6 +276,7 @@ export default function HomePage() {
           searchQuery={searchQuery}
           loading={loading}
           error={error}
+          fetchProgress={fetchProgress}
           onFeedSelect={setSelectedFeed}
           onSearchChange={setSearchQuery}
           onAddFeed={handleAddFeed}

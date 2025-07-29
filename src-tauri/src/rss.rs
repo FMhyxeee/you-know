@@ -1,5 +1,5 @@
 use crate::error::{AppError, AppResult};
-use crate::models::{AddFeedRequest, RssArticle, RssFeed, UpdateArticleRequest};
+use crate::models::{AddFeedRequest, RssArticle, RssFeed, UpdateArticleRequest, RssFetchProgress, RssFetchStatus, RssArticleFetched};
 use chrono::{DateTime, Utc};
 use feed_rs::parser;
 use log::info;
@@ -7,6 +7,7 @@ use readability::extractor;
 use reqwest;
 use scraper::{Html, Selector};
 use sqlx::{Row, SqlitePool};
+use tauri::{AppHandle, Emitter};
 use url::Url;
 use uuid::Uuid;
 
@@ -14,13 +15,193 @@ use uuid::Uuid;
 pub struct RssService;
 
 impl RssService {
-    /// 添加RSS源
+    /// 添加RSS源（同步版本，只创建RSS源记录，不抓取文章）
+    pub async fn add_feed_sync(db: &SqlitePool, request: AddFeedRequest) -> AppResult<RssFeed> {
+        // 验证URL格式
+        let url = Url::parse(&request.url).map_err(|_| AppError::invalid_rss_url(&request.url))?;
+
+        // 获取RSS内容并解析基本信息
+        // 添加超时设置，避免长时间等待
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()?;
+        let response = client.get(url.as_str()).send().await?;
+        let content = response.text().await?;
+
+        let feed = parser::parse(content.as_bytes())?;
+
+        let feed_id = Uuid::new_v4().to_string();
+        let now = Utc::now();
+
+        let title = feed
+            .title
+            .as_ref()
+            .map(|t| t.content.clone())
+            .unwrap_or_else(|| "Untitled Feed".to_string());
+        let description = feed.description.map(|d| d.content);
+        let website_url = feed.links.first().map(|l| l.href.clone());
+
+        // 插入RSS源到数据库
+        sqlx::query(
+            "INSERT INTO rss_feeds (id, title, url, description, website_url, last_updated, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(&feed_id)
+        .bind(&title)
+        .bind(&request.url)
+        .bind(&description)
+        .bind(&website_url)
+        .bind(now.to_rfc3339())
+        .bind(now.to_rfc3339())
+        .bind(now.to_rfc3339())
+        .execute(db)
+        .await?;
+
+        Ok(RssFeed {
+            id: feed_id,
+            title,
+            url: request.url,
+            description,
+            website_url,
+            last_updated: Some(now),
+            is_active: true,
+            created_at: now,
+            updated_at: now,
+        })
+    }
+
+    /// 异步抓取RSS文章
+    pub async fn fetch_articles_async(
+        db: &SqlitePool,
+        feed_id: &str,
+        url: &str,
+        app_handle: &AppHandle,
+    ) -> AppResult<()> {
+        // 获取RSS内容并解析
+        // 添加超时设置，避免长时间等待
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()?;
+        let response = client.get(url).send().await?;
+        let content = response.text().await?;
+        let feed = parser::parse(content.as_bytes())?;
+        
+        let now = Utc::now();
+        let total_articles = feed.entries.len() as u32;
+        let feed_title = feed.title.as_ref().map(|t| t.content.clone()).unwrap_or_else(|| "Unknown".to_string());
+        
+        // 发送进度更新
+        let progress = RssFetchProgress {
+            feed_id: feed_id.to_string(),
+            feed_title: feed_title.clone(),
+            total_articles,
+            fetched_articles: 0,
+            current_article_title: None,
+            status: RssFetchStatus::InProgress,
+        };
+        let _ = app_handle.emit("rss-fetch-progress", &progress);
+        
+        // 逐个处理文章
+        for (index, entry) in feed.entries.iter().enumerate() {
+            let article_id = Uuid::new_v4().to_string();
+            let title = entry.title.as_ref().map(|t| t.content.clone()).unwrap_or_else(|| "Untitled".to_string());
+            let link = entry.links.first().map(|l| l.href.clone());
+            let description = entry.summary.as_ref().map(|s| s.content.clone());
+            let author = entry.authors.first().map(|a| a.name.clone());
+            let published_at = entry.published.map(|dt| dt.with_timezone(&Utc));
+            let guid = entry.id.clone();
+            let read_time = Self::extract_read_time(entry);
+            
+            // 检查文章是否已存在
+            let existing = sqlx::query(
+                "SELECT id FROM rss_articles WHERE guid = ? AND feed_id = ?"
+            )
+            .bind(&Some(guid.clone()))
+            .bind(feed_id)
+            .fetch_optional(db)
+            .await?;
+            
+            if existing.is_none() {
+                // 插入新文章
+                sqlx::query(
+                    "INSERT INTO rss_articles (id, feed_id, title, link, description, author, published_at, guid, read_time, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                )
+                .bind(&article_id)
+                .bind(feed_id)
+                .bind(&title)
+                .bind(&link)
+                .bind(&description)
+                .bind(&author)
+                .bind(published_at.map(|dt| dt.to_rfc3339()))
+                .bind(&Some(guid.clone()))
+                .bind(&read_time)
+                .bind(now.to_rfc3339())
+                .execute(db)
+                .await?;
+                
+                // 创建文章对象并发送事件
+                let article = RssArticle {
+                    id: article_id,
+                    feed_id: feed_id.to_string(),
+                    title: title.clone(),
+                    link: link.clone(),
+                    description: description.clone(),
+                    content: None,
+                    author: author.clone(),
+                    published_at,
+                    guid: Some(guid),
+                    is_read: false,
+                    is_starred: false,
+                    read_time: read_time.clone(),
+                    created_at: now,
+                };
+                
+                // 发送文章抓取事件
+                let article_event = RssArticleFetched {
+                    feed_id: feed_id.to_string(),
+                    article,
+                };
+                let _ = app_handle.emit("rss-article-fetched", &article_event);
+            }
+            
+            // 发送进度更新
+            let progress = RssFetchProgress {
+                feed_id: feed_id.to_string(),
+                feed_title: feed_title.clone(),
+                total_articles,
+                fetched_articles: (index + 1) as u32,
+                current_article_title: Some(title),
+                status: RssFetchStatus::InProgress,
+            };
+            let _ = app_handle.emit("rss-fetch-progress", &progress);
+            
+            // 添加延迟避免过快的更新，减少对RSS服务器的负担
+            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        }
+        
+        // 更新RSS源的最后更新时间
+        sqlx::query(
+            "UPDATE rss_feeds SET last_updated = ?, updated_at = ? WHERE id = ?"
+        )
+        .bind(now.to_rfc3339())
+        .bind(now.to_rfc3339())
+        .bind(feed_id)
+        .execute(db)
+        .await?;
+        
+        Ok(())
+    }
+
+    /// 添加RSS源（原版本，保持兼容性）
     pub async fn add_feed(db: &SqlitePool, request: AddFeedRequest) -> AppResult<RssFeed> {
         // 验证URL格式
         let url = Url::parse(&request.url).map_err(|_| AppError::invalid_rss_url(&request.url))?;
 
         // 获取RSS内容并解析
-        let response = reqwest::get(url.as_str()).await?;
+        // 添加超时设置，避免长时间等待
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()?;
+        let response = client.get(url.as_str()).send().await?;
         let content = response.text().await?;
 
         let feed = parser::parse(content.as_bytes())?;
@@ -419,19 +600,44 @@ impl RssService {
         Ok("Article updated successfully".to_string())
     }
 
-    /// 刷新RSS源
+    /// 刷新RSS源（带频率限制）
     pub async fn refresh_feed(db: &SqlitePool, feed_id: String) -> AppResult<String> {
-        // 获取RSS源信息
-        let row = sqlx::query("SELECT url FROM rss_feeds WHERE id = ?")
+        // 获取RSS源信息，包括最后更新时间
+        let row = sqlx::query("SELECT url, last_updated FROM rss_feeds WHERE id = ?")
             .bind(&feed_id)
             .fetch_one(db)
             .await
             .map_err(|_| AppError::feed_not_found(&feed_id))?;
 
         let url: String = row.get("url");
+        let last_updated_str: Option<String> = row.get("last_updated");
+        
+        // 检查刷新间隔，防止频繁查询
+        const MIN_REFRESH_INTERVAL_MINUTES: i64 = 5; // 最小刷新间隔5分钟
+        
+        if let Some(last_updated_str) = last_updated_str {
+            if let Ok(last_updated) = DateTime::parse_from_rfc3339(&last_updated_str) {
+                let last_updated_utc = last_updated.with_timezone(&Utc);
+                let now = Utc::now();
+                let duration_since_last_update = now.signed_duration_since(last_updated_utc);
+                
+                if duration_since_last_update.num_minutes() < MIN_REFRESH_INTERVAL_MINUTES {
+                    let remaining_minutes = MIN_REFRESH_INTERVAL_MINUTES - duration_since_last_update.num_minutes();
+                    return Ok(format!(
+                        "刷新过于频繁，请等待 {} 分钟后再试。为了避免对RSS服务器造成过大负担，每个源最少需要间隔 {} 分钟才能刷新。",
+                        remaining_minutes,
+                        MIN_REFRESH_INTERVAL_MINUTES
+                    ));
+                }
+            }
+        }
 
         // 获取RSS内容并解析
-        let response = reqwest::get(&url).await?;
+        // 添加超时设置，避免长时间等待
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()?;
+        let response = client.get(&url).send().await?;
         let content = response.text().await?;
 
         let feed = parser::parse(content.as_bytes())?;
@@ -448,7 +654,7 @@ impl RssService {
             .await?;
 
         Ok(format!(
-            "Refreshed successfully. {} new articles added.",
+            "刷新成功！新增 {} 篇文章。",
             new_articles
         ))
     }
@@ -491,7 +697,7 @@ impl RssService {
                 .map(|c| c.body.clone().unwrap_or_default());
             let author = entry.authors.first().map(|a| a.name.clone());
             let published_at = entry.published.map(|p| p.to_rfc3339());
-            let guid = Some(entry.id.clone());
+            let guid = entry.id.clone();
 
             // 如果RSS中没有完整内容，尝试从链接获取
             if (content.is_none() || content.as_ref().map_or(true, |c| c.trim().is_empty()))
@@ -518,7 +724,7 @@ impl RssService {
             .bind(&content)
             .bind(&author)
             .bind(&published_at)
-            .bind(&guid)
+            .bind(&Some(guid))
             .bind(&read_time)
             .bind(now.to_rfc3339())
             .execute(db)

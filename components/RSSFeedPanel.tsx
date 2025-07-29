@@ -13,7 +13,7 @@ import {
 import { Label } from "./ui/label";
 import { ScrollArea } from "./ui/scroll-area";
 import { Badge } from "./ui/badge";
-import { Plus, Search, RefreshCw, Trash2 } from "lucide-react";
+import { Plus, Search, RefreshCw, Trash2, Download, CheckCircle, AlertCircle } from "lucide-react";
 
 interface Feed {
   id: string;
@@ -34,6 +34,16 @@ interface Article {
   created_at: string;
 }
 
+// RSS抓取进度接口
+interface RssFetchProgress {
+  feed_id: string;
+  feed_title: string;
+  total_articles: number;
+  fetched_articles: number;
+  current_article_title?: string;
+  status: 'Started' | 'InProgress' | 'Completed' | { Failed: string };
+}
+
 interface RSSFeedPanelProps {
   feeds: Feed[];
   articles: Article[];
@@ -41,6 +51,7 @@ interface RSSFeedPanelProps {
   searchQuery: string;
   loading: boolean;
   error: string | null;
+  fetchProgress?: Map<string, RssFetchProgress>;
   onFeedSelect: (feedId: string | null) => void;
   onSearchChange: (query: string) => void;
   onAddFeed: (url: string) => Promise<boolean>;
@@ -56,6 +67,7 @@ export default function RSSFeedPanel({
   selectedFeed,
   searchQuery,
   loading,
+  fetchProgress,
   onFeedSelect,
   onSearchChange,
   onAddFeed,
@@ -94,6 +106,50 @@ export default function RSSFeedPanel({
   const totalUnreadCount = articles.filter(
     (article) => !article.is_read,
   ).length;
+
+  // 渲染抓取进度指示器
+  const renderFetchProgress = (feedId: string) => {
+    const progress = fetchProgress?.get(feedId);
+    if (!progress) return null;
+
+    const getStatusIcon = () => {
+      switch (progress.status) {
+        case 'Started':
+        case 'InProgress':
+          return <Download className="h-3 w-3 animate-spin" />;
+        case 'Completed':
+          return <CheckCircle className="h-3 w-3 text-green-500" />;
+        default:
+          if (typeof progress.status === 'object' && 'Failed' in progress.status) {
+            return <AlertCircle className="h-3 w-3 text-red-500" />;
+          }
+          return null;
+      }
+    };
+
+    const getStatusText = () => {
+      switch (progress.status) {
+        case 'Started':
+          return '开始抓取...';
+        case 'InProgress':
+          return `抓取中 ${progress.fetched_articles}/${progress.total_articles}`;
+        case 'Completed':
+          return '抓取完成';
+        default:
+          if (typeof progress.status === 'object' && 'Failed' in progress.status) {
+            return '抓取失败';
+          }
+          return '';
+      }
+    };
+
+    return (
+      <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+        {getStatusIcon()}
+        <span>{getStatusText()}</span>
+      </div>
+    );
+  };
 
   // 如果是折叠状态，显示简化的边框样式
   if (isCollapsed) {
@@ -196,6 +252,8 @@ export default function RSSFeedPanel({
                       {feed.description}
                     </p>
                   )}
+                  {/* 显示抓取进度 */}
+                  {renderFetchProgress(feed.id)}
                 </div>
               </div>
 

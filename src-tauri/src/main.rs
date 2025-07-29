@@ -39,10 +39,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::test_database_connection,
-            commands::create_tables,
-            commands::test_crud_operations,
-            commands::add_rss_feed,
+            commands::add_rss_feed_sync,
+            commands::add_rss_feed_async,
             commands::get_rss_feeds,
             commands::get_articles,
             commands::get_article_content,

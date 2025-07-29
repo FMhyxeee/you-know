@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 // 数据类型定义
 export interface RssFeed {
@@ -46,26 +47,33 @@ export interface Statistics {
   starred_articles: number;
 }
 
+// RSS抓取进度事件
+export interface RssFetchProgress {
+  feed_id: string;
+  feed_title: string;
+  total_articles: number;
+  fetched_articles: number;
+  current_article_title?: string;
+  status: 'Started' | 'InProgress' | 'Completed' | { Failed: string };
+}
+
+// RSS文章抓取事件
+export interface RssArticleFetched {
+  feed_id: string;
+  article: RssArticle;
+}
+
 // API服务类
 export class ApiService {
-  // 测试数据库连接
-  static async testDatabaseConnection(): Promise<string> {
-    return await invoke("test_database_connection");
-  }
 
-  // 创建表结构
-  static async createTables(): Promise<string> {
-    return await invoke("create_tables");
-  }
-
-  // 测试CRUD操作
-  static async testCrudOperations(): Promise<string> {
-    return await invoke("test_crud_operations");
-  }
 
   // RSS源管理
-  static async addRssFeed(request: AddFeedRequest): Promise<RssFeed> {
-    return await invoke("add_rss_feed", { request });
+  static async addRssFeedSync(request: AddFeedRequest): Promise<RssFeed> {
+    return await invoke("add_rss_feed_sync", { request });
+  }
+
+  static async addRssFeedAsync(request: AddFeedRequest): Promise<RssFeed> {
+    return await invoke("add_rss_feed_async", { request });
   }
 
   static async getRssFeeds(): Promise<RssFeed[]> {
@@ -105,5 +113,22 @@ export class ApiService {
   // 基本测试函数
   static async greet(name: string): Promise<string> {
     return await invoke("greet", { name });
+  }
+
+  // 事件监听
+  static async listenToRssFetchProgress(
+    callback: (progress: RssFetchProgress) => void
+  ): Promise<() => void> {
+    return await listen<RssFetchProgress>("rss-fetch-progress", (event) => {
+      callback(event.payload);
+    });
+  }
+
+  static async listenToRssArticleFetched(
+    callback: (articleEvent: RssArticleFetched) => void
+  ): Promise<() => void> {
+    return await listen<RssArticleFetched>("rss-article-fetched", (event) => {
+      callback(event.payload);
+    });
   }
 }

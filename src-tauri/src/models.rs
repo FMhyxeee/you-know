@@ -1,29 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-// 对话相关数据模型
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Conversation {
-    pub id: String,
-    pub title: String,
-    pub model_provider: String,
-    pub model_name: String,
-    pub system_prompt: Option<String>,
-    pub temperature: f64,
-    pub max_tokens: i32,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Message {
-    pub id: String,
-    pub conversation_id: String,
-    pub role: String,
-    pub content: String,
-    pub token_count: Option<i32>,
-    pub created_at: DateTime<Utc>,
-}
 
 // RSS相关数据模型
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,7 +35,7 @@ pub struct RssArticle {
 }
 
 // 请求数据模型
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct AddFeedRequest {
     pub url: String,
 }
@@ -73,4 +51,30 @@ pub struct UpdateArticleRequest {
 #[derive(Debug)]
 pub struct AppState {
     pub db: sqlx::SqlitePool,
+}
+
+// RSS抓取进度事件
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RssFetchProgress {
+    pub feed_id: String,
+    pub feed_title: String,
+    pub total_articles: u32,
+    pub fetched_articles: u32,
+    pub current_article_title: Option<String>,
+    pub status: RssFetchStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum RssFetchStatus {
+    Started,
+    InProgress,
+    Completed,
+    Failed(String),
+}
+
+// RSS文章抓取事件
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RssArticleFetched {
+    pub feed_id: String,
+    pub article: RssArticle,
 }
