@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import RSSFeedPanel from "@/components/RSSFeedPanel";
 import ArticleListPanel from "@/components/ArticleListPanel";
 import ArticleReaderPanel from "@/components/ArticleReaderPanel";
-import { ApiService, RssFeed, RssArticle, RssFetchProgress, RssArticleFetched } from "@/services/api";
+import { ApiService, RssFeed, RssArticle, RssFetchProgress } from "@/services/api";
 
 // 定义Tauri窗口接口
 interface TauriWindow extends Window {

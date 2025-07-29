@@ -73,6 +73,34 @@ export default function ArticleListPanel({
     return matchesSearch && matchesFilter;
   });
 
+  /**
+   * 处理富文本内容，截取HTML内容并确保标签完整性
+   * @param htmlContent - 包含HTML标签的富文本内容
+   * @returns 处理后的HTML内容
+   */
+  const truncateHtmlContent = (htmlContent: string): string => {
+    if (!htmlContent) return "";
+    
+    // 如果内容较短，直接返回
+    if (htmlContent.length <= 200) {
+      return htmlContent;
+    }
+    
+    // 截取前200个字符
+    let truncated = htmlContent.substring(0, 200);
+    
+    // 确保不会在HTML标签中间截断
+    const lastOpenTag = truncated.lastIndexOf('<');
+    const lastCloseTag = truncated.lastIndexOf('>');
+    
+    if (lastOpenTag > lastCloseTag) {
+      // 如果最后一个 < 在最后一个 > 之后，说明可能截断了标签
+      truncated = truncated.substring(0, lastOpenTag);
+    }
+    
+    return truncated + "...";
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -201,9 +229,12 @@ export default function ArticleListPanel({
                 </div>
 
                 {article.description && (
-                  <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
-                    {article.description}
-                  </p>
+                  <div 
+                    className="text-sm text-muted-foreground line-clamp-2 mb-2 prose prose-sm max-w-none prose-p:my-0 prose-headings:my-0 prose-ul:my-0 prose-ol:my-0"
+                    dangerouslySetInnerHTML={{ 
+                      __html: truncateHtmlContent(article.description) 
+                    }}
+                  />
                 )}
 
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
