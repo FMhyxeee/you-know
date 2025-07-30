@@ -1,6 +1,6 @@
 use crate::error::{AppError, AppResult};
 use crate::models::{AddFeedRequest, RssArticle, RssFeed, UpdateArticleRequest, RssFetchProgress, RssFetchStatus, RssArticleFetched};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, Local};
 use feed_rs::parser;
 use log::info;
 use readability::extractor;
@@ -31,7 +31,8 @@ impl RssService {
         let feed = parser::parse(content.as_bytes())?;
 
         let feed_id = Uuid::new_v4().to_string();
-        let now = Utc::now();
+        // 获取当前本地时间并转换为UTC时间
+        let now = Local::now().with_timezone(&Utc);
 
         let title = feed
             .title
@@ -85,7 +86,8 @@ impl RssService {
         let content = response.text().await?;
         let feed = parser::parse(content.as_bytes())?;
         
-        let now = Utc::now();
+        // 获取当前本地时间并转换为UTC时间
+        let now = Local::now().with_timezone(&Utc);
         let total_articles = feed.entries.len() as u32;
         let feed_title = feed.title.as_ref().map(|t| t.content.clone()).unwrap_or_else(|| "Unknown".to_string());
         
@@ -207,7 +209,8 @@ impl RssService {
         let feed = parser::parse(content.as_bytes())?;
 
         let feed_id = Uuid::new_v4().to_string();
-        let now = Utc::now();
+        // 获取当前本地时间并转换为UTC时间
+        let now = Local::now().with_timezone(&Utc);
 
         let title = feed
             .title
@@ -618,7 +621,8 @@ impl RssService {
         if let Some(last_updated_str) = last_updated_str {
             if let Ok(last_updated) = DateTime::parse_from_rfc3339(&last_updated_str) {
                 let last_updated_utc = last_updated.with_timezone(&Utc);
-                let now = Utc::now();
+                // 获取当前本地时间并转换为UTC时间
+                let now = Local::now().with_timezone(&Utc);
                 let duration_since_last_update = now.signed_duration_since(last_updated_utc);
                 
                 if duration_since_last_update.num_minutes() < MIN_REFRESH_INTERVAL_MINUTES {
@@ -642,7 +646,8 @@ impl RssService {
 
         let feed = parser::parse(content.as_bytes())?;
 
-        let now = Utc::now();
+        // 获取当前本地时间并转换为UTC时间
+        let now = Local::now().with_timezone(&Utc);
         let new_articles = Self::save_articles(db, &feed_id, &feed.entries, &now).await?;
 
         // 更新RSS源的最后更新时间
