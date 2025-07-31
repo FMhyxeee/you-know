@@ -1,3 +1,7 @@
+// Prevents additional console window on Windows in release, DO NOT REMOVE!!
+#[cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+
 use log::{error, info};
 use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
@@ -70,8 +74,6 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
-#[cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
     run();
