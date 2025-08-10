@@ -19,7 +19,7 @@ pub fn run() {
                         path: utils::get_log_path()
                             .unwrap_or_else(|_| std::path::PathBuf::from("./logs"))
                             .into(),
-                        file_name: Some("app.log".to_string()),
+                        file_name: Some("app".to_string()),
                     }),
                 ])
                 .build(),
